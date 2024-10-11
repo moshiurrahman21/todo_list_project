@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:orientation="vertical"
+    android:background="#EFEDFDF8">
+
+
+
+
+    <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp"
+        android:background="#2874CC"
+       >
+
+    <!-- Category Selection Layout -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingBottom="8dp"
+        >
+
+        <!-- Category Spinner -->
+        <Spinner
+            android:id="@+id/spinner_category"
+            android:layout_width="0dp"
+            android:layout_height="48dp"
+            android:layout_weight="1"
+            android:entries="@array/category_array"
+            android:padding="10dp"
+            android:popupBackground="@drawable/task_background"
+            android:theme="@style/SpinnerPopupStyle"
+            />
+
+    </LinearLayout>
+
+
+    <!-- Task Title Input -->
+    <EditText
+        android:id="@+id/et_task_title"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:hint="Task Title"
+        android:inputType="text"
+        android:padding="10dp"
+        android:background="@drawable/dailog_task_bg"
+        android:textColor="#212121"
+        android:textColorHint="#B3ADAD"
+        android:textSize="20sp"
+        android:textStyle="bold"
+        android:fontFamily="@font/carter_one"
+        />
+
+    <!-- Task Description Layout -->
+    <LinearLayout
+        android:id="@+id/layout_descriptions"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:layout_marginTop="10dp"
+        />
+
+    <!-- Icons Layout -->
+    <RelativeLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:paddingTop="8dp">
+
+        <!-- Plus Icon for Adding Description -->
+        <ImageView
+            android:id="@+id/iv_add_description"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:src="@drawable/ic_add"
+            android:padding="8dp"
+            android:background="@drawable/send_bg" />
+
+        <!-- Alarm Icon -->
+        <ImageView
+            android:id="@+id/iv_set_alarm"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:src="@drawable/ic_alarm"
+            android:padding="8dp"
+            android:background="@drawable/send_bg"
+            android:layout_toRightOf="@id/iv_add_description"
+            android:layout_marginLeft="5dp" />
+
+        <ImageView
+            android:id="@+id/btn_save_task"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:src="@drawable/baseline_send_24"
+            android:gravity="end"
+            android:padding="8dp"
+            android:background="@drawable/send_bg"
+            android:layout_alignParentRight="true" />
+
+    </RelativeLayout>
+
+</LinearLayout>
+
+</ScrollView>
