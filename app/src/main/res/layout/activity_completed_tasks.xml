@@ -37,6 +37,16 @@
             />
 
 
+        <ImageView
+            android:id="@+id/action_delete_all"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:src="@drawable/ic_delete"
+            android:layout_gravity="end"
+            android:layout_marginRight="20dp"
+
+            />
+
 </androidx.appcompat.widget.Toolbar>
 
 

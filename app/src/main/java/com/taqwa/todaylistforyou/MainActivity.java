@@ -17,10 +17,15 @@ import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.RectF;
 import android.media.MediaPlayer;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
 import android.os.Build;
 import android.os.Bundle;
+import android.text.Editable;
+import android.text.InputFilter;
 import android.text.SpannableString;
 import android.text.TextUtils;
+import android.text.TextWatcher;
 import android.text.style.ForegroundColorSpan;
 import android.util.DisplayMetrics;
 import android.util.Log;
@@ -79,8 +84,6 @@ public class MainActivity extends AppCompatActivity implements TaskAdapter.OnAla
     private List<Task> taskList = new ArrayList<>();
     private String taskDate = "";
     private String taskTime = "";
-    private MediaPlayer deleteSound;
-    private MediaPlayer completeSound;
     private MediaPlayer sendSound;
     private int removedPosition;
     private AlarmManager alarmManager;
@@ -91,6 +94,10 @@ public class MainActivity extends AppCompatActivity implements TaskAdapter.OnAla
     private static final int MAX_SHARED_PREFERENCES_SIZE_MB = 2; // Maximum size in MB
     private InterstitialAd mInterstitialAd;
     private static final String TAG = "MainActivity";
+    int completedTaskCount;
+    private static final int MAX_DESCRIPTIONS = 50;
+    private static final int MAX_CHARACTERS_PER_DESCRIPTION = 100;
+    private List<EditText> descriptionFields = new ArrayList<>();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -99,7 +106,7 @@ public class MainActivity extends AppCompatActivity implements TaskAdapter.OnAla
         Window window = getWindow();
         window.clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS);
         window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
-        window.setStatusBarColor(ContextCompat.getColor(this, R.color.blue)); // এখানে `your_color` রং পরিবর্তন করুন
+        window.setStatusBarColor(ContextCompat.getColor(this, R.color.blue)); // এখানে your_color রং পরিবর্তন করুন
 
 
         //==================== Mobile Ads Initialize ====================
@@ -119,17 +126,22 @@ public class MainActivity extends AppCompatActivity implements TaskAdapter.OnAla
         // Banner Ads
         // Step 3 : Finding adViewContainer and call loadBanner() method
         LinearLayout adViewContainer = findViewById(R.id.adViewContainer);
-        loadBanner(adViewContainer);
+
+
+        if (isNetworkAvailable()){
+            loadBanner(adViewContainer);
+
+        }else {
+            Toast.makeText(this, "Please check your internet connection.", Toast.LENGTH_SHORT).show();
+
+        }
 
 
         //================================================================
         //================================================================
 
-        loadFullScreenAds();
-
         //================================================================
         //================================================================
-
 
 
         // ******************************************************************
@@ -170,6 +182,9 @@ public class MainActivity extends AppCompatActivity implements TaskAdapter.OnAla
         // #####################################################################
         //#####################################################################
 
+
+        SharedPreferences sharedPreferences = getSharedPreferences("TASKS", MODE_PRIVATE);
+        completedTaskCount = sharedPreferences.getInt("completed_task_count", 0); // আগের টাস্ক কাউন্ট রিস্টোর
 
         //******************************************************************
         //************************** Sound Declear *************************
@@ -219,51 +234,60 @@ public class MainActivity extends AppCompatActivity implements TaskAdapter.OnAla
         });
         //----------------------------------------------------------------------
 
-
         ItemTouchHelper itemTouchHelper = new ItemTouchHelper(new ItemTouchHelper.SimpleCallback(0, ItemTouchHelper.LEFT | ItemTouchHelper.RIGHT) {
             @Override
             public void onSwiped(RecyclerView.ViewHolder viewHolder, int direction) {
                 int position = viewHolder.getAdapterPosition();
-                Task removedTask = taskList.get(position); // টাস্কটি ডিলিট করার জন্য
-                removedPosition = position;
 
-                if (direction == ItemTouchHelper.LEFT) {
-                    // টাস্কটি ডিলিট করা হচ্ছে
-                    taskList.remove(position);
-                    taskAdapter.notifyItemRemoved(position);
-                    removeTaskFromSharedPreferences(removedTask); // টাস্কটি SharedPreferences থেকে ডিলিট হচ্ছে
-                    Toast.makeText(MainActivity.this, "Task removed successfully!", Toast.LENGTH_SHORT).show();
+                // ইনডেক্সটি চেক করা যাতে তা taskList এর সীমার মধ্যে থাকে
+                if (position >= 0 && position < taskList.size()) {
+                    Task removedTask = taskList.get(position);
+                    removedPosition = position;
 
-                    MediaPlayer deletedSound = MediaPlayer.create(MainActivity.this, R.raw.delete_sound);
-                    deletedSound.start();
+                    if (direction == ItemTouchHelper.LEFT) {
+                        // টাস্কটি ডিলিট করা হচ্ছে
+                        taskList.remove(position);
+                        taskAdapter.notifyItemRemoved(position);
+                        removeTaskFromSharedPreferences(removedTask); // টাস্কটি SharedPreferences থেকে ডিলিট হচ্ছে
+                        Toast.makeText(MainActivity.this, "Task removed successfully!", Toast.LENGTH_SHORT).show();
 
-                    // UNDO অপশন দেখানোর জন্য Snackbar
-                    Snackbar snackbar = Snackbar.make(recyclerView, "Task deleted", Snackbar.LENGTH_LONG);
-                    snackbar.setAction("UNDO", v -> {
-                        // টাস্কটি পুনরায় যোগ করা হচ্ছে
-                        taskList.add(removedPosition, removedTask);
-                        taskAdapter.notifyItemInserted(removedPosition);
-                        saveTaskToSharedPreferences(removedTask); // পুনরায় SharedPreferences-এ সেভ করা হচ্ছে
-                    });
-                    snackbar.addCallback(new Snackbar.Callback() {
-                        @Override
-                        public void onDismissed(Snackbar transientBottomBar, int event) {
-                            if (event != Snackbar.Callback.DISMISS_EVENT_ACTION) {
-                                // UNDO বাটনে ক্লিক না করা হলে টাস্কটি স্থায়ীভাবে ডিলিট করা হচ্ছে
-                                removeTaskFromSharedPreferences(removedTask);
+                        MediaPlayer deletedSound = MediaPlayer.create(MainActivity.this, R.raw.delete_sound);
+                        deletedSound.start();
+
+                        // UNDO অপশন দেখানোর জন্য Snackbar
+                        Snackbar snackbar = Snackbar.make(recyclerView, "Task deleted", Snackbar.LENGTH_LONG);
+                        snackbar.setAction("UNDO", v -> {
+                            // টাস্কটি পুনরায় যোগ করা হচ্ছে
+                            taskList.add(removedPosition, removedTask);
+                            taskAdapter.notifyItemInserted(removedPosition);
+                            saveTaskToSharedPreferences(removedTask); // পুনরায় SharedPreferences-এ সেভ করা হচ্ছে
+                        });
+                        snackbar.addCallback(new Snackbar.Callback() {
+                            @Override
+                            public void onDismissed(Snackbar transientBottomBar, int event) {
+                                if (event != Snackbar.Callback.DISMISS_EVENT_ACTION) {
+                                    // UNDO বাটনে ক্লিক না করা হলে টাস্কটি স্থায়ীভাবে ডিলিট করা হচ্ছে
+                                    removeTaskFromSharedPreferences(removedTask);
+                                }
                             }
+                        });
+                        snackbar.show();
+                        checkIfTaskListIsEmpty();
+                    } else if (direction == ItemTouchHelper.RIGHT) {
+                        // কমপ্লিটেড টাস্কের সীমা চেক করুন
+                        if (getCompletedTaskCount() >= 30) {
+                            Toast.makeText(MainActivity.this, "You cannot complete more tasks until you remove some from completed tasks.", Toast.LENGTH_SHORT).show();
+                            taskAdapter.notifyItemChanged(position); // টাস্কটি পুনরায় দেখান
+                        } else {
+                            // টাস্কটি কমপ্লিট করা হচ্ছে
+                            markTaskComplete(position);
+                            Toast.makeText(MainActivity.this, "\uD83C\uDF89 Task done! See it in 'Completed Tasks'!", Toast.LENGTH_SHORT).show();
+                            checkIfTaskListIsEmpty();
                         }
-                    });
-                    snackbar.show();
-                    checkIfTaskListIsEmpty();
+                    }
+                } else {
+                    Toast.makeText(MainActivity.this, "Error: Invalid task position", Toast.LENGTH_SHORT).show();
                 }
-                else if (direction == ItemTouchHelper.RIGHT) {
-                    markTaskComplete(position);
-
-                    checkIfTaskListIsEmpty();
-                    Toast.makeText(MainActivity.this, "Well done! \uD83C\uDF89 Task completed. Check it in 'Completed Tasks'!", Toast.LENGTH_SHORT).show();
-                }
-
             }
 
             @Override
@@ -277,43 +301,52 @@ public class MainActivity extends AppCompatActivity implements TaskAdapter.OnAla
                     View itemView = viewHolder.itemView;
                     Paint paint = new Paint();
                     if (dX > 0) {
-                        // ডান দিকে সুইফট করার জন্য
+                        // ডান দিকে সুইপ করার জন্য
                         paint.setColor(Color.GREEN);
                         RectF background = new RectF(itemView.getLeft(), itemView.getTop(), dX, itemView.getBottom());
                         c.drawRect(background, paint);
                     } else if (dX < 0) {
-                        // বাম দিকে সুইফট করার জন্য
+                        // বাম দিকে সুইপ করার জন্য
                         paint.setColor(Color.RED);
                         RectF background = new RectF(itemView.getRight() + dX, itemView.getTop(), itemView.getRight(), itemView.getBottom());
                         c.drawRect(background, paint);
                     }
-
                     super.onChildDraw(c, recyclerView, viewHolder, dX, dY, actionState, isCurrentlyActive);
                 }
             }
         });
 
-        // RecyclerView-তে ItemTouchHelper অ্যাটাচ করুন
+// RecyclerView-এ `ItemTouchHelper` সেট করা হচ্ছে
         itemTouchHelper.attachToRecyclerView(recyclerView);
+
 
         //----------------------------------------------------------------------
 
-        // Navigation Drawer item click listener
+        // নেভিগেশন ড্রয়ার থেকে Completed Tasks নির্বাচন করা হলে অ্যাড দেখানো বা সরাসরি এক্টিভিটিতে যাওয়া
         navigationView.setNavigationItemSelectedListener(new NavigationView.OnNavigationItemSelectedListener() {
             @Override
             public boolean onNavigationItemSelected(@NonNull MenuItem item) {
                 int id = item.getItemId();
                 if (id == R.id.menu_completed_tasks) {
-                    if (mInterstitialAd != null) {
-                        mInterstitialAd.show(MainActivity.this);
+                    Intent intent = new Intent(MainActivity.this, CompletedTasksActivity.class);
+                    if (isNetworkAvailable()) {
+                        if (mInterstitialAd != null) {
+                            mInterstitialAd.show(MainActivity.this);
+                            mInterstitialAd.setFullScreenContentCallback(new FullScreenContentCallback() {
+                                @Override
+                                public void onAdDismissedFullScreenContent() {
+                                    startActivity(intent); // অ্যাড কেটে দিলে সরাসরি `CompletedTasksActivity` তে যাবে
+                                    loadInterstitialAd(); // পরবর্তী অ্যাড লোড
+                                }
+                            });
+                        } else {
+                            Toast.makeText(MainActivity.this, "Ad couldn't load. Please check your internet connection.", Toast.LENGTH_SHORT).show();
+                            startActivity(intent);
+                        }
                     } else {
-                        Log.d("TAG", "The interstitial ad wasn't ready yet.");
-                        Toast.makeText(MainActivity.this, "Ad couldn't load. Please check your internet connection.", Toast.LENGTH_SHORT).show();
-
-                        Intent intent = new Intent(MainActivity.this, CompletedTasksActivity.class);
-                        startActivity(intent); // বিজ্ঞাপন লোড না হলে সরাসরি গন্তব্যে পাঠানো
+                        startActivity(intent);
                     }
-                    drawerLayout.closeDrawers(); // Close the drawer after the action
+                    drawerLayout.closeDrawers();
                 }
                 return true;
             }
@@ -383,6 +416,13 @@ public class MainActivity extends AppCompatActivity implements TaskAdapter.OnAla
     }
 
     private void openAddTaskDialog() {
+
+        // Check if task count is already at maximum
+        if (taskList.size() >= 15) {
+            Toast.makeText(this, "Maximum 15 tasks allowed. Please complete or delete some tasks first.", Toast.LENGTH_SHORT).show();
+            return; // Stop further execution
+        }
+
         LayoutInflater inflater = LayoutInflater.from(this);
         View dialogView = inflater.inflate(R.layout.dialog_add_task, null);
         AlertDialog.Builder dialogBuilder = new AlertDialog.Builder(this);
@@ -396,6 +436,30 @@ public class MainActivity extends AppCompatActivity implements TaskAdapter.OnAla
         ImageView ivAddDescription = dialogView.findViewById(R.id.iv_add_description);
         ImageView ivSetAlarm = dialogView.findViewById(R.id.iv_set_alarm);
 
+        // ডিসক্রিপশন ফিল্ডগুলো পরিষ্কার করুন প্রতিবার নতুন টাস্ক যুক্ত করার সময়
+        descriptionFields.clear(); // Clear the list to reset the count for new task
+        layoutDescriptions.removeAllViews(); // Remove any views from previous task descriptions
+
+
+        // টাইটেল ইনপুটে লিমিট সেট করা
+        etTaskTitle.setFilters(new InputFilter[] { new InputFilter.LengthFilter(50) });
+        etTaskTitle.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+                if (s.length() >= 50) {
+                    etTaskTitle.setError("Title limit: 50 characters max.");
+                }
+            }
+
+            @Override
+            public void afterTextChanged(Editable s) {}
+        });
+
+
+
         // ক্যাটাগরি স্পিনারে ডাটা সেট করা
         ArrayAdapter<CharSequence> adapter = ArrayAdapter.createFromResource(this,
                 R.array.category_array, android.R.layout.simple_spinner_item);
@@ -403,17 +467,19 @@ public class MainActivity extends AppCompatActivity implements TaskAdapter.OnAla
         spinnerCategory.setAdapter(adapter);
 
         ivSetAlarm.setOnClickListener(view -> {
-            showDateTimePicker(new OnDateTimeSelectedListener() {
-                @Override
-                public void onDateTimeSelected(String date, String time) {
-                    taskDate = date;
-                    taskTime = time;
-                }
+            showDateTimePicker((date, time) -> {
+                taskDate = date;
+                taskTime = time;
             });
         });
 
         ivAddDescription.setOnClickListener(view -> {
-            addDescriptionField(layoutDescriptions, ""); // Add empty description field
+            // সর্বাধিক ৫টি ডিসক্রিপশন যোগ করার শর্ত চেক করুন
+            if (descriptionFields.size() < MAX_DESCRIPTIONS) {
+                addDescriptionField(layoutDescriptions, "", false); // Add empty description field
+            } else {
+                Toast.makeText(this, "Maximum 50 descriptions allowed.", Toast.LENGTH_SHORT).show();
+            }
         });
 
         btnSaveTask.setOnClickListener(view -> {
@@ -432,19 +498,11 @@ public class MainActivity extends AppCompatActivity implements TaskAdapter.OnAla
 
             // যদি টাইটেল খালি থাকে
             if (taskTitle.isEmpty()) {
-                Toast.makeText(this, "Please give the title of the task", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, "Please provide the task title", Toast.LENGTH_SHORT).show();
             } else {
                 // যদি ইউজার কোনো তারিখ এবং সময় না দেয়, তাহলে বর্তমান সময় ও তারিখ ব্যবহার করা হবে
-                String finalDate;
-                String finalTime;
-
-                if (taskDate.isEmpty() && taskTime.isEmpty()) {
-                    finalDate = getCurrentDate(); // বর্তমান তারিখ
-                    finalTime = getCurrentTime(); // বর্তমান সময়
-                } else {
-                    finalDate = taskDate;
-                    finalTime = taskTime;
-                }
+                String finalDate = taskDate.isEmpty() ? getCurrentDate() : taskDate;
+                String finalTime = taskTime.isEmpty() ? getCurrentTime() : taskTime;
 
                 sendSound = MediaPlayer.create(this, R.raw.send_sound);
                 sendSound.start();
@@ -454,12 +512,10 @@ public class MainActivity extends AppCompatActivity implements TaskAdapter.OnAla
                 saveTask(newTask); // টাস্ক সেভ করা হচ্ছে
                 dialog.dismiss();
                 checkIfTaskListIsEmpty();
-
             }
         });
 
         dialog.show();
-
     }
 
 
@@ -486,6 +542,14 @@ public class MainActivity extends AppCompatActivity implements TaskAdapter.OnAla
         datePickerDialog.show();
     }
     private void saveTask(Task task) {
+
+        // Check if task count is already at maximum
+        if (taskList.size() >= 20) {
+            Toast.makeText(this, "Maximum 20 tasks allowed. Please complete or delete some tasks first.", Toast.LENGTH_SHORT).show();
+            return; // Stop further execution if task limit is reached
+        }
+
+
         taskList.add(0, task);
 
         SharedPreferences sharedPreferences = getSharedPreferences("TASKS", MODE_PRIVATE);
@@ -527,7 +591,6 @@ public class MainActivity extends AppCompatActivity implements TaskAdapter.OnAla
 
         taskAdapter.notifyDataSetChanged();
     }
-
 
 
     private void displayTasks() {
@@ -585,7 +648,22 @@ public class MainActivity extends AppCompatActivity implements TaskAdapter.OnAla
         etTaskTitle.setText(task.getTitle());
         List<String> descriptions = task.getDescriptions();
 
+// টাইটেল ইনপুটে লিমিট সেট করা
+        etTaskTitle.setFilters(new InputFilter[] { new InputFilter.LengthFilter(50) });
+        etTaskTitle.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
 
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+                if (s.length() >= 50) {
+                    etTaskTitle.setError("Maximum 50 characters allowed for title.");
+                }
+            }
+
+            @Override
+            public void afterTextChanged(Editable s) {}
+        });
 
         // Set the category spinner
         String[] categories = {"Personal", "Work", "Shopping", "Study", "Others"};
@@ -595,10 +673,13 @@ public class MainActivity extends AppCompatActivity implements TaskAdapter.OnAla
         spinnerCategory.setSelection(adapter.getPosition(task.getCategory()));
 
 
+        // ডিসক্রিপশন ফিল্ডগুলো পরিষ্কার করুন প্রতিবার নতুন টাস্ক যুক্ত করার সময়
+        descriptionFields.clear(); // Clear the list to reset the count for new task
+        layoutDescriptions.removeAllViews(); // Remove any views from previous task descriptions
 
         // Set existing descriptions
         for (String description : descriptions) {
-            addDescriptionField(layoutDescriptions, description);
+            addDescriptionField(layoutDescriptions, description, true);
         }
 
         spinnerCategory.setSelection(adapter.getPosition(task.getCategory()));
@@ -611,9 +692,13 @@ public class MainActivity extends AppCompatActivity implements TaskAdapter.OnAla
         }
 
 
+
         ivAddDescription.setOnClickListener(view -> {
-            addDescriptionField(layoutDescriptions, ""); // Add empty description field
-        });
+            if (descriptionFields.size() < MAX_DESCRIPTIONS) {
+                addDescriptionField(layoutDescriptions, "", false);
+            } else {
+                Toast.makeText(this, "Maximum 50 descriptions allowed.", Toast.LENGTH_SHORT).show();
+            }        });
 
         ivSetAlarm.setOnClickListener(view -> {
             if (!task.isAlarmSet()) {
@@ -677,75 +762,137 @@ public class MainActivity extends AppCompatActivity implements TaskAdapter.OnAla
         dialog.show();
     }
 
+
+
+
+
+
+
     // Method to add a description field with a delete icon
-    private void addDescriptionField(LinearLayout layout, String description) {
+    private void addDescriptionField(LinearLayout layout, String description, boolean isEditing) {
         EditText descEditText = new EditText(this);
         descEditText.setLayoutParams(new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
         descEditText.setHint("Description");
-        descEditText.setText(description); // Set existing description if available
+        descEditText.setText(description);
         descEditText.setBackground(getResources().getDrawable(R.drawable.task_background));
         descEditText.setPadding(20, 20, 20, 20);
         descEditText.setTextColor(getResources().getColor(R.color.black));
         descEditText.setHintTextColor(getResources().getColor(R.color.gray));
 
+        // ক্যারেক্টার লিমিট ১০০
+        descEditText.setFilters(new InputFilter[]{new InputFilter.LengthFilter(MAX_CHARACTERS_PER_DESCRIPTION)});
 
+        // TextWatcher to show an error message when the character limit is reached
+        descEditText.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
 
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+                if (s.length() >= MAX_CHARACTERS_PER_DESCRIPTION) {
+                    descEditText.setError("Maximum " + MAX_CHARACTERS_PER_DESCRIPTION + " characters allowed.");
+                }
+            }
 
+            @Override
+            public void afterTextChanged(Editable s) {}
+        });
+
+        // ডিলিট আইকন
         ImageView deleteIcon = new ImageView(this);
-        deleteIcon.setImageResource(R.drawable.ic_delete); // Delete icon
+        deleteIcon.setImageResource(R.drawable.ic_delete);
         deleteIcon.setOnClickListener(v -> {
             layout.removeView(descEditText);
             layout.removeView(deleteIcon);
+            descriptionFields.remove(descEditText); // Remove from the list
+            // Check if we need to enable the add description button
+            if (descriptionFields.size() < MAX_DESCRIPTIONS) {
+            }
         });
 
+        // ডিসক্রিপশন এডিটটেক্সট এবং ডিলিট আইকন যুক্ত করা
         layout.addView(descEditText);
         layout.addView(deleteIcon);
+
+        // Add the description EditText to the list
+        descriptionFields.add(descEditText);
     }
 
 
 
-
+    // টাস্ক কমপ্লিট করার মেথড
     private void markTaskComplete(int position) {
         MediaPlayer completed_sound = MediaPlayer.create(MainActivity.this, R.raw.completed_sound);
         completed_sound.start();
-        Task task = taskList.get(position);
-        task.setCompleted(true); // টাস্ককে কমপ্লিট হিসেবে মার্ক করা
 
-        // যদি টাস্কের এলার্ম সেট করা থাকে, তা বাতিল করা হবে
+        Task task = taskList.get(position);
+        task.setCompleted(true);
+
         if (task.isAlarmSet()) {
             cancelAlarm(task);
             task.setAlarmSet(false);
         }
 
-        // টাস্ক লিস্ট থেকে সরিয়ে নেওয়া হচ্ছে
         taskList.remove(position);
         saveTasksToSharedPreferences();
+        saveCompletedTask(task);
+        taskAdapter.notifyItemRemoved(position);
 
-        // কমপ্লিট হওয়া টাস্ককে সেভ করার জন্য
-        saveCompletedTask(task); // কমপ্লিট হওয়া টাস্ক সেভ করা হচ্ছে
+        SharedPreferences sharedPreferences = getSharedPreferences("TASKS", MODE_PRIVATE);
+        int completedTaskCount = sharedPreferences.getInt("completed_task_count", 0);
+        completedTaskCount++;
+        sharedPreferences.edit().putInt("completed_task_count", completedTaskCount).apply();
 
-        taskAdapter.notifyItemRemoved(position); // UI থেকে টাস্ক সরানো হচ্ছে
+        // প্রতিটি ৫টি টাস্ক পর অ্যাড দেখাবে
+        if (completedTaskCount % 5 == 0 && mInterstitialAd != null && isNetworkAvailable()) {
+            mInterstitialAd.show(this);
+            mInterstitialAd.setFullScreenContentCallback(new FullScreenContentCallback() {
+                @Override
+                public void onAdDismissedFullScreenContent() {
+                    mInterstitialAd = null;
+                    loadInterstitialAd(); // পরবর্তী অ্যাড লোড
+                    // অ্যাড কেটে দিলে মেইন এক্টিভিটিতে ফিরে আসবে
+                    Toast.makeText(MainActivity.this, "Task completed!", Toast.LENGTH_SHORT).show();
+                }
+            });
+        } else {
+            // ইন্টারনেট না থাকলে সরাসরি `CompletedTasksActivity` তে নিয়ে যাবে
+            loadInterstitialAd(); // পরবর্তী অ্যাড লোড করা
+        }
     }
+
+
+
 
     private void saveCompletedTask(Task completedTask) {
         SharedPreferences sharedPreferences = getSharedPreferences("COMPLETED_TASKS", MODE_PRIVATE);
         SharedPreferences.Editor editor = sharedPreferences.edit();
 
-        // কমপ্লিট টাস্কগুলোর সংখ্যা ইনক্রিমেন্ট করা হচ্ছে
+        // Get the current count of completed tasks
         int completedTaskCount = sharedPreferences.getInt("COMPLETED_TASK_COUNT", 0);
-        editor.putInt("COMPLETED_TASK_COUNT", completedTaskCount + 1);
 
-        // টাস্কের সমস্ত তথ্য সেভ করা হচ্ছে
+        // Check if the number of completed tasks has reached the limit (30)
+        if (completedTaskCount >= 30) {
+            Toast.makeText(this, "You cannot complete more than 30 tasks.", Toast.LENGTH_SHORT).show();
+            return; // Don't save the new task if the limit is reached
+        }
+
+        // Save the task data
         editor.putString("COMPLETED_TASK_" + completedTaskCount,
                 completedTask.getId() + ";" + completedTask.getTitle() + ";" +
                         TextUtils.join(",", completedTask.getDescriptions()) + ";" +
                         completedTask.getCategory() + ";" + completedTask.getDate() + ";" +
                         completedTask.getTime() + ";" + completedTask.isAlarmSet() + ";" + completedTask.isCompleted());
 
-        editor.apply(); // সেভ করা হচ্ছে
+        // Increment the completed task count
+        editor.putInt("COMPLETED_TASK_COUNT", completedTaskCount + 1); // Update the count
+        editor.apply(); // Save the changes
+
+        Toast.makeText(this, "Task marked as completed.", Toast.LENGTH_SHORT).show();
     }
+
 
 
     private String getCurrentDate() {
@@ -880,7 +1027,6 @@ public class MainActivity extends AppCompatActivity implements TaskAdapter.OnAla
 
 //===========================================================================
 
-
     private void removeTaskFromSharedPreferences(Task task) {
         SharedPreferences sharedPreferences = getSharedPreferences("TASKS", MODE_PRIVATE);
         SharedPreferences.Editor editor = sharedPreferences.edit();
@@ -929,6 +1075,25 @@ public class MainActivity extends AppCompatActivity implements TaskAdapter.OnAla
         SharedPreferences sharedPreferences = getSharedPreferences("TASKS", MODE_PRIVATE);
         SharedPreferences.Editor editor = sharedPreferences.edit();
 
+        // Title validation
+        if (task.getTitle() == null || task.getTitle().length() == 0) {
+            Toast.makeText(this, "Title cannot be empty.", Toast.LENGTH_SHORT).show();
+            return; // Stop if title is empty
+        }
+        if (task.getTitle().length() > 50) {
+            Toast.makeText(this, "Title cannot exceed 50 characters.", Toast.LENGTH_SHORT).show();
+            return; // Stop if title exceeds 50 characters
+        }
+
+        // Description validation
+        if (task.getDescriptions() == null || task.getDescriptions().isEmpty()) {
+            Toast.makeText(this, "At least one description is required.", Toast.LENGTH_SHORT).show();
+            return; // Stop if no descriptions are provided
+        }
+        if (task.getDescriptions().size() > MAX_DESCRIPTIONS) {
+            Toast.makeText(this, "You can only add up to " + MAX_DESCRIPTIONS + " descriptions.", Toast.LENGTH_SHORT).show();
+            return; // Stop if more than MAX_DESCRIPTIONS descriptions are added
+        }
 
         // Check the size of the SharedPreferences
         if (getSharedPreferencesSizeInMB(sharedPreferences) >= MAX_SHARED_PREFERENCES_SIZE_MB) {
@@ -936,17 +1101,16 @@ public class MainActivity extends AppCompatActivity implements TaskAdapter.OnAla
             return; // Stop the function if storage is full
         }
 
-        // টাস্কের descriptions সেভ করার আগে ব্র্যাকেট সরানো হচ্ছে
-        String descriptions = task.getDescriptions() == null || task.getDescriptions().isEmpty() ? "" : TextUtils.join(",", task.getDescriptions());
-        descriptions = descriptions.replace("[", "").replace("]", "");
+        // Task descriptions save
+        String descriptions = TextUtils.join(",", task.getDescriptions());
 
-        // টাস্কের তথ্য সেভ করা হচ্ছে
+        // Task data save
         editor.putString("TASK_" + task.getId(), task.getId() + ";" + task.getTitle() + ";" +
                 descriptions + ";" + task.getCategory() + ";" + task.getDate() + ";" + task.getTime() +
                 ";" + task.isAlarmSet() + ";" + task.isCompleted());
-        editor.apply(); // সেভ করা হচ্ছে
+        editor.apply(); // Save changes
 
-        // সেভ হওয়ার পর UI আপডেটের জন্য notifyDataSetChanged() কল
+        // Update UI after saving
         taskAdapter.notifyDataSetChanged();
         checkIfTaskListIsEmpty();
     }
@@ -978,16 +1142,16 @@ public class MainActivity extends AppCompatActivity implements TaskAdapter.OnAla
 
 
 
-   // ===========================================================================
-private BroadcastReceiver updateIconReceiver = new BroadcastReceiver() {
-    @Override
-    public void onReceive(Context context, Intent intent) {
-        if (intent.getBooleanExtra("update_icon", false)) {
-            int taskId = intent.getIntExtra("task_id", -1);
-            updateTaskAlarmIcon(taskId); // আইকন পরিবর্তন করার জন্য একটি মেথড কল করুন
+    // ===========================================================================
+    private BroadcastReceiver updateIconReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (intent.getBooleanExtra("update_icon", false)) {
+                int taskId = intent.getIntExtra("task_id", -1);
+                updateTaskAlarmIcon(taskId); // আইকন পরিবর্তন করার জন্য একটি মেথড কল করুন
+            }
         }
-    }
-};
+    };
 
     @Override
     protected void onStart() {
@@ -1086,7 +1250,7 @@ private BroadcastReceiver updateIconReceiver = new BroadcastReceiver() {
 
             Toast.makeText(getBaseContext(), "Press again to exit",
 
-            Toast.LENGTH_SHORT).show();
+                    Toast.LENGTH_SHORT).show();
             super.onBackPressed();
 
         }
@@ -1106,21 +1270,26 @@ private BroadcastReceiver updateIconReceiver = new BroadcastReceiver() {
 
     // Banner Ads
 // Step 1 : Implementation Admob banner ads method in your Activity
+    // Banner Ads
     private void loadBanner(LinearLayout adViewContainer) {
+        if (isNetworkAvailable()) {
+            // Create a new ad view.
+            AdView adView = new AdView(this);
+            adView.setAdSize(getAdSize(adViewContainer));
+            adView.setAdUnitId("ca-app-pub-3940256099942544/9214589741");
 
-        // Create a new ad view.
-        AdView adView = new AdView(this);
-        adView.setAdSize(getAdSize(adViewContainer));
-        adView.setAdUnitId("ca-app-pub-3940256099942544/9214589741");
+            // Replace ad container with new ad view.
+            adViewContainer.removeAllViews();
+            adViewContainer.addView(adView);
 
-        // Replace ad container with new ad view.
-        adViewContainer.removeAllViews();
-        adViewContainer.addView(adView);
-
-        // Start loading the ad in the background.
-        AdRequest adRequest = new AdRequest.Builder().build();
-        adView.loadAd(adRequest);
+            // Start loading the ad in the background.
+            AdRequest adRequest = new AdRequest.Builder().build();
+            adView.loadAd(adRequest);
+        } else {
+            Toast.makeText(this, "Please check your internet connection.", Toast.LENGTH_SHORT).show();
+        }
     }
+
 
     private AdSize getAdSize(LinearLayout adViewContainer) {
         // Determine the screen width (less decorations) to use for the ad width.
@@ -1145,8 +1314,12 @@ private BroadcastReceiver updateIconReceiver = new BroadcastReceiver() {
     // Interstial Ads
     //========================================================================
 
+
+    //========================================================================
+
     // Ad Loading Method
-    private void loadFullScreenAds() {
+// ইন্টারস্টিশিয়াল অ্যাড লোড মেথড
+    private void loadInterstitialAd() {
         AdRequest adRequest = new AdRequest.Builder().build();
 
         InterstitialAd.load(this, "ca-app-pub-3940256099942544/1033173712", adRequest,
@@ -1154,52 +1327,41 @@ private BroadcastReceiver updateIconReceiver = new BroadcastReceiver() {
                     @Override
                     public void onAdLoaded(@NonNull InterstitialAd interstitialAd) {
                         mInterstitialAd = interstitialAd;
-                        Log.i(TAG, "onAdLoaded");
-
-                        mInterstitialAd.setFullScreenContentCallback(new FullScreenContentCallback() {
-                            @Override
-                            public void onAdClicked() {
-                                Log.d(TAG, "Ad was clicked.");
-                            }
-
-                            @Override
-                            public void onAdDismissedFullScreenContent() {
-                                Log.d(TAG, "Ad dismissed fullscreen content.");
-                                mInterstitialAd = null;
-                                loadFullScreenAds();
-
-                                Intent intent = new Intent(MainActivity.this, CompletedTasksActivity.class);
-                                startActivity(intent);
-                            }
-
-                            @Override
-                            public void onAdFailedToShowFullScreenContent(AdError adError) {
-                                Log.e(TAG, "Ad failed to show fullscreen content.");
-                                mInterstitialAd = null;
-                            }
-
-                            @Override
-                            public void onAdImpression() {
-                                Log.d(TAG, "Ad recorded an impression.");
-                            }
-
-                            @Override
-                            public void onAdShowedFullScreenContent() {
-                                Log.d(TAG, "Ad showed fullscreen content.");
-                            }
-                        });
+                        Log.i(TAG, "Ad loaded successfully.");
                     }
 
                     @Override
                     public void onAdFailedToLoad(@NonNull LoadAdError loadAdError) {
-                        Log.d(TAG, loadAdError.toString());
+                        Log.d(TAG, "Failed to load ad: " + loadAdError.getMessage());
                         mInterstitialAd = null;
                     }
                 });
     }
 
-    //========================================================================
+    // ইন্টারনেট চেক করার মেথড
+    private boolean isNetworkAvailable() {
+        ConnectivityManager connectivityManager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+        NetworkInfo networkInfo = connectivityManager.getActiveNetworkInfo();
+        return networkInfo != null && networkInfo.isConnected();
+    }
+
+
+    //======================================================================
+
+    private int getCompletedTaskCount() {
+        int count = 0;
+        for (Task task : taskList) {
+            if (task.isCompleted()) { // টাস্কটি যদি সম্পূর্ণ হয়ে থাকে
+                count++;
+            }
+        }
+        return count;
+    }
+
+    //======================================================================
+    //======================================================================
+    //======================================================================
+    //======================================================================
 
 
 }
-

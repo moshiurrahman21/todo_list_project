@@ -9,7 +9,8 @@ android {
     defaultConfig {
         applicationId "com.taqwa.todaylistforyou"
         minSdk 22
-        targetSdk 34
+        //noinspection OldTargetApi
+        targetSdk 33
         versionCode 1
         versionName "1.0"
 
@@ -40,7 +41,7 @@ dependencies {
     androidTestImplementation libs.espresso.core
     implementation libs.lottie
     implementation libs.neumorphism
-    implementation("com.google.android.gms:play-services-ads:23.4.0")
+    implementation(libs.play.services.ads)
 
 
 
