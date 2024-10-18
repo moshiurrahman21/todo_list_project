@@ -198,6 +198,7 @@ public class CompletedTasksActivity extends AppCompatActivity {
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         builder.setTitle("Delete All Completed Tasks")
                 .setMessage("Are you sure you want to delete all completed tasks?")
+                .setIcon(R.drawable.ic_alarm_on)
                 .setPositiveButton("Yes", new DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(DialogInterface dialog, int which) {
