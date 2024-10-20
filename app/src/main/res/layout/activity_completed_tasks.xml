@@ -44,7 +44,7 @@
             android:src="@drawable/ic_delete"
             android:layout_gravity="end"
             android:layout_marginRight="20dp"
-
+            android:padding="20dp"
             />
 
 </androidx.appcompat.widget.Toolbar>

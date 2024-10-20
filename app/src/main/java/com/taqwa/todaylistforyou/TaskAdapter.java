@@ -129,4 +129,10 @@ public class TaskAdapter extends RecyclerView.Adapter<TaskAdapter.TaskViewHolder
             alarmIcon = itemView.findViewById(R.id.iv_task_alarm); // এলার্ম আইকন
         }
     }
+
+    @Override
+    public long getItemId(int position) {
+        // প্রতিটি আইটেমের জন্য একটি ইউনিক আইডি রিটার্ন করা হচ্ছে
+        return taskList.get(position).getId(); // অথবা তুমি যে আইডি ব্যবহার করতে চাও
+    }
 }

@@ -11,15 +11,25 @@ import android.graphics.Paint;
 import android.graphics.RectF;
 import android.media.MediaPlayer;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.View;
 import android.widget.ImageView;
 import android.widget.Toast;
 
+import androidx.annotation.NonNull;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 import androidx.recyclerview.widget.ItemTouchHelper;
+
+import com.google.android.gms.ads.AdError;
+import com.google.android.gms.ads.AdRequest;
+import com.google.android.gms.ads.FullScreenContentCallback;
+import com.google.android.gms.ads.LoadAdError;
+import com.google.android.gms.ads.MobileAds;
+import com.google.android.gms.ads.interstitial.InterstitialAd;
+import com.google.android.gms.ads.interstitial.InterstitialAdLoadCallback;
 import com.google.android.material.snackbar.Snackbar;
 
 import java.util.ArrayList;
@@ -50,7 +60,7 @@ public class CompletedTasksActivity extends AppCompatActivity {
             public void onClick(View v) {
                 showDeleteConfirmationDialog();
             }
-            });
+        });
 
         back_icon.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -82,7 +92,6 @@ public class CompletedTasksActivity extends AppCompatActivity {
                 // Remove the task and notify the adapter
                 completedTaskList.remove(position);
                 taskAdapter.notifyItemRemoved(position);
-                Toast.makeText(CompletedTasksActivity.this, "Task removed successfully!", Toast.LENGTH_SHORT).show();
 
                 MediaPlayer deleteSound = MediaPlayer.create(CompletedTasksActivity.this, R.raw.delete_sound);
                 deleteSound.start();
@@ -95,10 +104,21 @@ public class CompletedTasksActivity extends AppCompatActivity {
                     taskAdapter.notifyItemInserted(removedPosition);
                     saveTaskToPreferences(removedTask); // Save back to preferences
                 });
+                snackbar.addCallback(new Snackbar.Callback() {
+                    @Override
+                    public void onDismissed(Snackbar transientBottomBar, int event) {
+                        if (event != Snackbar.Callback.DISMISS_EVENT_ACTION) {
+
+                            // UNDO বাটনে ক্লিক না করা হলে টাস্কটি স্থায়ীভাবে ডিলিট করা হচ্ছে
+                            // Remove from shared preferences if not undone
+                            saveDeletedTaskToPreferences(removedTask);
+                            Toast.makeText(CompletedTasksActivity.this, "Task removed successfully!", Toast.LENGTH_SHORT).show();
+                        }
+                    }
+                });
                 snackbar.show();
 
-                // Remove from shared preferences if not undone
-                saveDeletedTaskToPreferences(removedTask);
+
             }
 
             @Override
@@ -191,14 +211,13 @@ public class CompletedTasksActivity extends AppCompatActivity {
     }
 
 
-
     //===================================================================
 
     private void showDeleteConfirmationDialog() {
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         builder.setTitle("Delete All Completed Tasks")
                 .setMessage("Are you sure you want to delete all completed tasks?")
-                .setIcon(R.drawable.ic_alarm_on)
+                .setIcon(R.drawable.delete_icon_aleart)
                 .setPositiveButton("Yes", new DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(DialogInterface dialog, int which) {
@@ -235,9 +254,8 @@ public class CompletedTasksActivity extends AppCompatActivity {
 
     //===================================================================
 
-
-
+}
 
     //===================================================================
 
-}
+

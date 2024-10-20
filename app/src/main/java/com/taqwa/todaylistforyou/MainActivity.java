@@ -51,6 +51,7 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
 import androidx.core.view.GravityCompat;
 import androidx.drawerlayout.widget.DrawerLayout;
+import androidx.recyclerview.widget.DefaultItemAnimator;
 import androidx.recyclerview.widget.ItemTouchHelper;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
@@ -91,7 +92,7 @@ public class MainActivity extends AppCompatActivity implements TaskAdapter.OnAla
     private ActionBarDrawerToggle toggle;
     private LottieAnimationView background_image;  // ব্যাকগ্রাউন্ড ইমেজের জন্য ভেরিয়েবল
     private TextView background_text;
-    private static final int MAX_SHARED_PREFERENCES_SIZE_MB = 2; // Maximum size in MB
+    private static final int MAX_SHARED_PREFERENCES_SIZE_MB = 1; // Maximum size in MB
     private InterstitialAd mInterstitialAd;
     private static final String TAG = "MainActivity";
     int completedTaskCount;
@@ -121,6 +122,7 @@ public class MainActivity extends AppCompatActivity implements TaskAdapter.OnAla
                 })
                 .start();
 
+        loadInterstitialAd();
         //================================================================
 
         // Banner Ads
@@ -162,7 +164,9 @@ public class MainActivity extends AppCompatActivity implements TaskAdapter.OnAla
         //***************** Adapter & Recycler View ********************
 
         recyclerView.setLayoutManager(new LinearLayoutManager(this));
+        recyclerView.setItemAnimator(new DefaultItemAnimator());
         taskAdapter = new TaskAdapter(taskList, this);
+        taskAdapter.setHasStableIds(true); // অ্যানিমেশন ঠিকঠাক কাজ করার জন্য সেট করা হচ্ছে
         recyclerView.setAdapter(taskAdapter);
 
         //#####################################################################
@@ -234,22 +238,23 @@ public class MainActivity extends AppCompatActivity implements TaskAdapter.OnAla
         });
         //----------------------------------------------------------------------
 
+
+        // Swipe functionality in RecyclerView
         ItemTouchHelper itemTouchHelper = new ItemTouchHelper(new ItemTouchHelper.SimpleCallback(0, ItemTouchHelper.LEFT | ItemTouchHelper.RIGHT) {
             @Override
             public void onSwiped(RecyclerView.ViewHolder viewHolder, int direction) {
                 int position = viewHolder.getAdapterPosition();
+                Task removedTask = taskList.get(position);
+                removedPosition = position;
 
                 // ইনডেক্সটি চেক করা যাতে তা taskList এর সীমার মধ্যে থাকে
                 if (position >= 0 && position < taskList.size()) {
-                    Task removedTask = taskList.get(position);
-                    removedPosition = position;
 
                     if (direction == ItemTouchHelper.LEFT) {
+
                         // টাস্কটি ডিলিট করা হচ্ছে
                         taskList.remove(position);
                         taskAdapter.notifyItemRemoved(position);
-                        removeTaskFromSharedPreferences(removedTask); // টাস্কটি SharedPreferences থেকে ডিলিট হচ্ছে
-                        Toast.makeText(MainActivity.this, "Task removed successfully!", Toast.LENGTH_SHORT).show();
 
                         MediaPlayer deletedSound = MediaPlayer.create(MainActivity.this, R.raw.delete_sound);
                         deletedSound.start();
@@ -260,12 +265,17 @@ public class MainActivity extends AppCompatActivity implements TaskAdapter.OnAla
                             // টাস্কটি পুনরায় যোগ করা হচ্ছে
                             taskList.add(removedPosition, removedTask);
                             taskAdapter.notifyItemInserted(removedPosition);
-                            saveTaskToSharedPreferences(removedTask); // পুনরায় SharedPreferences-এ সেভ করা হচ্ছে
+                             saveTaskToSharedPreferences(removedTask); // পুনরায় SharedPreferences-এ সেভ করা হচ্ছে
+
                         });
+
+
                         snackbar.addCallback(new Snackbar.Callback() {
                             @Override
                             public void onDismissed(Snackbar transientBottomBar, int event) {
                                 if (event != Snackbar.Callback.DISMISS_EVENT_ACTION) {
+                                    Toast.makeText(MainActivity.this, "Task removed successfully!", Toast.LENGTH_SHORT).show();
+
                                     // UNDO বাটনে ক্লিক না করা হলে টাস্কটি স্থায়ীভাবে ডিলিট করা হচ্ছে
                                     removeTaskFromSharedPreferences(removedTask);
                                 }
@@ -274,14 +284,33 @@ public class MainActivity extends AppCompatActivity implements TaskAdapter.OnAla
                         snackbar.show();
                         checkIfTaskListIsEmpty();
                     } else if (direction == ItemTouchHelper.RIGHT) {
-                        // কমপ্লিটেড টাস্কের সীমা চেক করুন
-                        if (getCompletedTaskCount() >= 30) {
-                            Toast.makeText(MainActivity.this, "You cannot complete more tasks until you remove some from completed tasks.", Toast.LENGTH_SHORT).show();
-                            taskAdapter.notifyItemChanged(position); // টাস্কটি পুনরায় দেখান
-                        } else {
+
+                        // টাস্কটি কমপ্লিট করার আগে চেক করা
+                        SharedPreferences sharedPreferences = getSharedPreferences("COMPLETED_TASKS", MODE_PRIVATE);
+                        int completedTaskCount = sharedPreferences.getInt("COMPLETED_TASK_COUNT", 0);
+
+                        if (completedTaskCount >= 20) {
+                            // টাস্ক কমপ্লিট করা যাবে না, পপ-আপ দেখানো হবে
+                            AlertDialog.Builder builder = new AlertDialog.Builder(MainActivity.this);
+                            builder.setTitle("Task Limit Reached");
+                            builder.setMessage("You've completed the maximum number of tasks allowed. To complete new tasks, please remove some tasks from the completed list first.\n\nClick 'Cancel' to return to the task list, or click 'OK' to go to the completed tasks page, where you can delete some tasks.");
+                            builder.setCancelable(false);
+
+                            builder.setNegativeButton("Cancel", (dialog, which) -> {
+                                dialog.dismiss();
+                                taskAdapter.notifyItemChanged(position); // টাস্কটি পুনরায় দেখান
+                            });
+
+                            builder.setPositiveButton("OK", (dialog, which) -> {
+                                dialog.dismiss();
+                                startActivity(new Intent(MainActivity.this, CompletedTasksActivity.class)); // কমপ্লিট টাস্ক একটিভিটিতে নিয়ে যাওয়া হবে
+                            });
+
+                            builder.show();
+
+                    } else {
                             // টাস্কটি কমপ্লিট করা হচ্ছে
                             markTaskComplete(position);
-                            Toast.makeText(MainActivity.this, "\uD83C\uDF89 Task done! See it in 'Completed Tasks'!", Toast.LENGTH_SHORT).show();
                             checkIfTaskListIsEmpty();
                         }
                     }
@@ -315,7 +344,6 @@ public class MainActivity extends AppCompatActivity implements TaskAdapter.OnAla
                 }
             }
         });
-
 // RecyclerView-এ `ItemTouchHelper` সেট করা হচ্ছে
         itemTouchHelper.attachToRecyclerView(recyclerView);
 
@@ -329,23 +357,7 @@ public class MainActivity extends AppCompatActivity implements TaskAdapter.OnAla
                 int id = item.getItemId();
                 if (id == R.id.menu_completed_tasks) {
                     Intent intent = new Intent(MainActivity.this, CompletedTasksActivity.class);
-                    if (isNetworkAvailable()) {
-                        if (mInterstitialAd != null) {
-                            mInterstitialAd.show(MainActivity.this);
-                            mInterstitialAd.setFullScreenContentCallback(new FullScreenContentCallback() {
-                                @Override
-                                public void onAdDismissedFullScreenContent() {
-                                    startActivity(intent); // অ্যাড কেটে দিলে সরাসরি `CompletedTasksActivity` তে যাবে
-                                    loadInterstitialAd(); // পরবর্তী অ্যাড লোড
-                                }
-                            });
-                        } else {
-                            Toast.makeText(MainActivity.this, "Ad couldn't load. Please check your internet connection.", Toast.LENGTH_SHORT).show();
-                            startActivity(intent);
-                        }
-                    } else {
-                        startActivity(intent);
-                    }
+                    startActivity(intent);
                     drawerLayout.closeDrawers();
                 }
                 return true;
@@ -854,7 +866,6 @@ public class MainActivity extends AppCompatActivity implements TaskAdapter.OnAla
                     mInterstitialAd = null;
                     loadInterstitialAd(); // পরবর্তী অ্যাড লোড
                     // অ্যাড কেটে দিলে মেইন এক্টিভিটিতে ফিরে আসবে
-                    Toast.makeText(MainActivity.this, "Task completed!", Toast.LENGTH_SHORT).show();
                 }
             });
         } else {
@@ -890,7 +901,7 @@ public class MainActivity extends AppCompatActivity implements TaskAdapter.OnAla
         editor.putInt("COMPLETED_TASK_COUNT", completedTaskCount + 1); // Update the count
         editor.apply(); // Save the changes
 
-        Toast.makeText(this, "Task marked as completed.", Toast.LENGTH_SHORT).show();
+        Toast.makeText(MainActivity.this, "\uD83C\uDF89 Task done!", Toast.LENGTH_SHORT).show();
     }
 
 
@@ -1039,7 +1050,6 @@ public class MainActivity extends AppCompatActivity implements TaskAdapter.OnAla
             if (taskData != null && !taskData.isEmpty()) {
                 String[] taskParts = taskData.split(";");
 
-                // Ensure taskParts[0] is not empty or null before parsing
                 if (taskParts.length > 0 && taskParts[0] != null && !taskParts[0].isEmpty()) {
                     try {
                         int taskId = Integer.parseInt(taskParts[0]);
@@ -1051,18 +1061,15 @@ public class MainActivity extends AppCompatActivity implements TaskAdapter.OnAla
 
                     } catch (NumberFormatException e) {
                         e.printStackTrace();
-                        // Log error message or handle the invalid number format gracefully
                         Log.e("Error", "Invalid task ID format for TASK_" + i);
                     }
-                } else {
-                    // Log a message if taskParts[0] is invalid
-                    Log.e("Error", "Task ID is empty or null for TASK_" + i);
                 }
             }
         }
 
         // Update task count in shared preferences after deletion
-        editor.putInt("TASK_COUNT", taskList.size()); // টাস্কের নতুন সংখ্যা আপডেট হচ্ছে
+        // Fixed this line to reflect the actual count
+        editor.putInt("TASK_COUNT", taskCount - 1); // নতুন সংখ্যা
         editor.apply();
         checkIfTaskListIsEmpty();
     }
@@ -1084,12 +1091,10 @@ public class MainActivity extends AppCompatActivity implements TaskAdapter.OnAla
             Toast.makeText(this, "Title cannot exceed 50 characters.", Toast.LENGTH_SHORT).show();
             return; // Stop if title exceeds 50 characters
         }
+        // Description সেভ করার সময়, যদি null বা empty হয় তবে খালি string সেভ হবে
+        String descriptions = task.getDescriptions() != null && !task.getDescriptions().isEmpty() ?
+                TextUtils.join(",", task.getDescriptions()) : "";
 
-        // Description validation
-        if (task.getDescriptions() == null || task.getDescriptions().isEmpty()) {
-            Toast.makeText(this, "At least one description is required.", Toast.LENGTH_SHORT).show();
-            return; // Stop if no descriptions are provided
-        }
         if (task.getDescriptions().size() > MAX_DESCRIPTIONS) {
             Toast.makeText(this, "You can only add up to " + MAX_DESCRIPTIONS + " descriptions.", Toast.LENGTH_SHORT).show();
             return; // Stop if more than MAX_DESCRIPTIONS descriptions are added
@@ -1101,8 +1106,6 @@ public class MainActivity extends AppCompatActivity implements TaskAdapter.OnAla
             return; // Stop the function if storage is full
         }
 
-        // Task descriptions save
-        String descriptions = TextUtils.join(",", task.getDescriptions());
 
         // Task data save
         editor.putString("TASK_" + task.getId(), task.getId() + ";" + task.getTitle() + ";" +
@@ -1231,35 +1234,25 @@ public class MainActivity extends AppCompatActivity implements TaskAdapter.OnAla
 
 
 
-    ///====================================================
-    private static final int TIME_INTERVAL = 2000; // # milliseconds, desired
+    private static final int TIME_INTERVAL = 2000; // 2 seconds
     private long mBackPressed;
 
-    // When user click bakpress button this method is called
     @Override
     public void onBackPressed() {
-        // When user press back button
-
+        // If back is pressed within 2 seconds
         if (mBackPressed + TIME_INTERVAL > System.currentTimeMillis()) {
+            // Close the app and return to home screen
             Intent intent = new Intent(Intent.ACTION_MAIN);
             intent.addCategory(Intent.CATEGORY_HOME);
             intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             startActivity(intent);
-
         } else {
-
-            Toast.makeText(getBaseContext(), "Press again to exit",
-
-                    Toast.LENGTH_SHORT).show();
-            super.onBackPressed();
-
+            // Show toast message on first back press
+            Toast.makeText(getBaseContext(), "Press again to exit", Toast.LENGTH_SHORT).show();
+            // Update the time of the last back press
+            mBackPressed = System.currentTimeMillis();
         }
-
-        mBackPressed = System.currentTimeMillis();
-
-
-
-    } // end of onBackpressed method
+    }
 
     //#############################################################################################
 
@@ -1359,6 +1352,17 @@ public class MainActivity extends AppCompatActivity implements TaskAdapter.OnAla
     }
 
     //======================================================================
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+
+        // যদি কোনো টাস্ক কমপ্লিট করার পর ব্যাক বাটন প্রেস করা হয়, তাহলে সেই টাস্কটি রিফ্রেশ করা হচ্ছে
+        if (removedPosition != -1) {
+            taskAdapter.notifyItemChanged(removedPosition); // টাস্কটি পুনরায় আগের অবস্থায় ফিরিয়ে আনা
+            removedPosition = -1; // পজিশন রিসেট করা হচ্ছে
+        }
+    }
     //======================================================================
     //======================================================================
     //======================================================================
